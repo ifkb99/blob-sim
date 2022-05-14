@@ -6,7 +6,7 @@ pub struct Neuron {
     pub cur_sum: f32,
 }
 impl Neuron {
-    fn activate(&mut self) {
+    pub fn activate(&mut self) {
         self.weight = 1. / (1. + (-self.cur_sum).exp());
     }
 }
@@ -14,7 +14,7 @@ impl Neuron {
 const FOUR_BITS: u128 = 15u128;
 const SXTEEN_BITS: u128 = 65535u128;
 // const N_SYNAPS: usize = 7;
-const N_INPUT: u8 = 3;
+const N_INPUT: u8 = 4;
 const N_OUTPUT: u8 = 4;
 
 #[derive(Debug)]

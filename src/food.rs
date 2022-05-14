@@ -62,7 +62,6 @@ impl Plugin for FoodPlugin {
             .add_system_to_stage(Stages::FoodStage, remove_food)
             .add_system(emit_chems)
             .add_system(dissolve_chems);
-        // .add_system(remove_food);
     }
 }
 
@@ -74,7 +73,8 @@ fn spawn_food(
     win: Res<WinSize>,
 ) {
     let mut r = rand::thread_rng();
-    while cur_food.0 < min_food.0 {
+    let mut ctr = 0u8; // only bring eight back in one go
+    while cur_food.0 < min_food.0 && ctr < 8 {
         commands
             .spawn_bundle(SpriteBundle {
                 sprite: Sprite {
@@ -96,6 +96,7 @@ fn spawn_food(
             .insert(Velocity::default())
             .insert(Acceleration::default());
         cur_food.0 += 1;
+        ctr += 1;
     }
 }
 
@@ -108,12 +109,6 @@ fn emit_chems(mut commands: Commands, query: Query<(&Transform, &Food)>) {
                 .spawn_bundle(SpriteBundle {
                     sprite: Sprite {
                         color: Color::rgba_u8(food.chem_id, food.chem_id, food.chem_id, 123u8),
-                        // color: Color::Rgba {
-                        //     red: 0.,
-                        //     green: 1.,
-                        //     blue: 0.,
-                        //     alpha: 0.5,
-                        // },
                         custom_size: Some(Vec2::new(1., 1.)),
                         ..Default::default()
                     },
@@ -125,7 +120,7 @@ fn emit_chems(mut commands: Commands, query: Query<(&Transform, &Food)>) {
                 })
                 .insert(Chem {
                     // id: food.chem_id,
-                    dissolve_life: 502u16,
+                    dissolve_life: 256u16,
                 })
                 .insert(Velocity::default())
                 .insert(Acceleration::default());

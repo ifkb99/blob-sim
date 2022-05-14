@@ -14,7 +14,7 @@ use crate::{
     food::{EatenFood, Food},
     genes::Genes,
     network::Network,
-    Chem, Stages, WinSize, HEIGHT, WIDTH,
+    Chem, Stages, WinSize,
 };
 use crate::{Acceleration, Velocity};
 
@@ -22,13 +22,14 @@ use crate::{Acceleration, Velocity};
 struct Blob {
     energy: f32,
     age: f32,
+    generation: u16,
     brain: Network,
 }
 
-struct OldestBlob((u128, f32));
+struct OldestBlob((u128, u16));
 impl Default for OldestBlob {
     fn default() -> Self {
-        Self((0u128, 0f32))
+        Self((0u128, 0u16))
     }
 }
 
@@ -59,13 +60,11 @@ impl Plugin for BlobPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(CurBlobs::default())
             .insert_resource(MinBlobs::default())
-            // .insert_resource(EatenChems::default())
             .insert_resource(OldestBlob::default())
             .add_system_set(
                 SystemSet::new()
                     .with_run_criteria(FixedTimestep::step(1.0))
                     .with_system(spawn_blobs)
-                    // .with_system(kill_blobs)
                     .with_system(blob_replicate)
                     .with_system(get_oldest),
             )
@@ -92,6 +91,7 @@ fn spawn_blobs(
             Genes::default(),
             100.,
             &mut cur_blobs,
+            0,
         );
     }
 }
@@ -102,6 +102,7 @@ fn spawn_blob(
     gene: Genes,
     energy: f32,
     cur_blobs: &mut ResMut<CurBlobs>,
+    generation: u16,
 ) {
     let gen = gene.gene;
     let r = ((gen & (255u128 << 120)) >> 120) as u8;
@@ -124,6 +125,7 @@ fn spawn_blob(
             energy,
             brain: Network::new(gene.clone()),
             age: 0.,
+            generation,
         })
         .insert(Velocity::default())
         .insert(Acceleration::default())
@@ -149,8 +151,13 @@ fn blob_replicate(
     mut query: Query<(&Transform, &Genes, &mut Blob)>,
     mut cur_blobs: ResMut<CurBlobs>,
 ) {
+    let mut r = rand::thread_rng();
     query.for_each_mut(|(trans, gene, mut blob)| {
-        if blob.brain.outputs[3].weight > 0.75 {
+        // reproduce, but not too often
+        // TODO: this should be done inside net? or just outside?
+        if blob.brain.outputs[3].weight > 0.3
+            && r.gen_bool((blob.brain.outputs[3].weight - 0.3) as f64)
+        {
             // STOP SPAWNING SO MUCH AAAAAAA
             if blob.energy <= 10. {
                 blob.energy = 0.
@@ -161,6 +168,7 @@ fn blob_replicate(
                     gene.replicate(),
                     blob.energy / 2.,
                     &mut cur_blobs,
+                    blob.generation + 1,
                 );
                 blob.energy /= 2.;
             }
@@ -173,6 +181,7 @@ fn blob_replicate(
 // Output nodes: x_mov, y_mov, consume, reproduce
 
 // THIS IS TEMPORARYYYYY
+// works kinda snice tho
 fn blob_action(
     mut blob_query: Query<(&mut Acceleration, &Transform, &mut Blob)>,
     chem_query: Query<(&Transform, With<Chem>)>,
@@ -189,20 +198,18 @@ fn blob_action(
             let dist = blob_loc.distance_squared(loc);
 
             if dist < 100. {
-                blob.brain.inputs[0].weight += (blob_loc.x - loc.x) / WIDTH;
-                blob.brain.inputs[1].weight += (blob_loc.y - loc.y) / HEIGHT;
-                // if dist < 5. {
-                //     match opt_chem {
-                //         Some(_) => eaten_chems.as_ref().0.push((ent.clone(), loc.clone())),
-                //         None => match opt_food {
-                //             Some(_) => eaten_food.0.push((ent.clone(), loc.clone())),
-                //             None => {}
-                //         },
-                //     }
-                // }
+                blob.brain.inputs[0].cur_sum += (-(blob_loc.x - loc.x)).exp();
+                blob.brain.inputs[1].cur_sum += (-(blob_loc.y - loc.y)).exp();
             }
         });
+        blob.brain.inputs[0].activate();
+        blob.brain.inputs[1].activate();
+        blob.brain.inputs[0].cur_sum = 0.;
+        blob.brain.inputs[1].cur_sum = 0.;
         blob.brain.inputs[2].weight = blob.energy / 500.;
+
+        // oscillator
+        blob.brain.inputs[3].weight = (blob.age * 10.).sin();
 
         // this is bad
         // get all things within
@@ -212,8 +219,9 @@ fn blob_action(
         accel.0.x += actions.0;
         accel.0.y += actions.1;
 
-        // movement costs energy
-        blob.energy -= (actions.0.abs() + actions.1.abs()) / 10.;
+        // movement costs energy, speed scales quadradically
+        let mov = actions.0.abs() + actions.1.abs();
+        blob.energy -= mov * mov / 5.;
 
         // if actions.2 {
         //     // consume
@@ -227,7 +235,7 @@ fn blob_action(
         // }
 
         // die slowly....
-        blob.energy -= 0.005;
+        blob.energy -= 0.001;
         blob.age += 0.001;
     });
 
@@ -243,11 +251,17 @@ fn blob_action(
     });
 }
 
+// Success collection:
+// - 114721507713529264750135620326395093237
+// - 303416926699858899782152564491612640343
 fn get_oldest(mut oldest: ResMut<OldestBlob>, query: Query<(&Blob, &Genes)>) {
     query.for_each(|(blob, genes)| {
-        if blob.age > oldest.0 .1 {
-            println!("New oldest blob! Age: {} Gene: {}", blob.age, genes.gene);
-            oldest.0 = (genes.gene, blob.age);
+        if blob.generation > oldest.0 .1 {
+            println!(
+                "New hightest gen blob! Gen: {} Geneome: {}",
+                blob.generation, genes.gene
+            );
+            oldest.0 = (genes.gene, blob.generation);
         }
     });
 }
