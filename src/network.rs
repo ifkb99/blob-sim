@@ -129,7 +129,7 @@ impl Network {
                 weight: 0.,
                 cur_sum: 0.,
             })
-            .take(3),
+            .take(N_INPUT as usize),
         );
         let internal = Vec::from_iter(
             std::iter::repeat(Neuron {
@@ -143,7 +143,7 @@ impl Network {
                 weight: 0.,
                 cur_sum: 0.,
             })
-            .take(4),
+            .take(N_OUTPUT as usize),
         );
 
         // TODO: consider separating out synapses to internal neurons and self loops
@@ -211,6 +211,7 @@ impl Network {
         }
 
         // TODO: consider random vs breakpoint
+        // why am I doing this extra stuff?
         (
             2. * self.outputs[0].weight - 1.,
             2. * self.outputs[1].weight - 1.,

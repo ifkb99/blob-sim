@@ -20,7 +20,7 @@ pub struct Food {
 impl Default for Food {
     fn default() -> Self {
         Food {
-            nutriton: 0.33,
+            nutriton: 33.33,
             chem_id: 1u8,
             emit_life: 0.1,
         }
@@ -150,7 +150,7 @@ fn remove_food(
     mut eaten_food: ResMut<EatenFood>,
 ) {
     for food in eaten_food.0.iter() {
-        println!("{:?}", food);
+        // println!("{:?}", food);
         commands.entity(*food).despawn();
         cur_food.0 -= 1;
     }
