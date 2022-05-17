@@ -191,35 +191,43 @@ fn blob_action(
 ) {
     let c: Vec<(&Transform, _)> = chem_query.iter().collect();
     blob_query.par_for_each_mut(&pool, 16, |(mut accel, blob_trans, mut blob)| {
-        // update sensors
+        // update sensors, x and y dir for nearby chems
         let blob_loc = blob_trans.translation;
         c.iter().for_each(|(trans, _)| {
             let loc = trans.translation;
             let dist = blob_loc.distance_squared(loc);
 
             if dist < 100. {
-                blob.brain.inputs[0].cur_sum += (-(blob_loc.x - loc.x)).exp();
-                blob.brain.inputs[1].cur_sum += (-(blob_loc.y - loc.y)).exp();
+                blob.brain.inputs[0].cur_sum += blob_loc.x - loc.x;
+                blob.brain.inputs[1].cur_sum += blob_loc.y - loc.y;
             }
         });
         blob.brain.inputs[0].activate();
         blob.brain.inputs[1].activate();
         blob.brain.inputs[0].cur_sum = 0.;
         blob.brain.inputs[1].cur_sum = 0.;
-        blob.brain.inputs[2].weight = blob.energy / 500.;
+        // energy level is second input
+        blob.brain.inputs[2].cur_sum = blob.energy;
+        blob.brain.inputs[2].activate();
+        blob.brain.inputs[2].cur_sum = 0.;
 
         // oscillator
-        blob.brain.inputs[3].weight = (blob.age * 10.).sin();
+        // activate or no?
+        blob.brain.inputs[3].weight = 0.5 + (blob.age * 10.).sin() / 2.;
+        // blob.brain.inputs[3].cur_sum = 0.5 + (blob.age * 10.).sin() / 2.;
+        // blob.brain.inputs[3].activate();
+        // blob.brain.inputs[3].cur_sum = 0.;
 
         // this is bad
         // get all things within
 
+        // TODO: move results into blob and pull from there
         let actions = blob.brain.eval();
 
         accel.0.x += actions.0;
         accel.0.y += actions.1;
 
-        // movement costs energy, speed scales quadradically
+        // movement costs energy, scaling quadradically
         let mov = actions.0.abs() + actions.1.abs();
         blob.energy -= mov * mov / 5.;
 
@@ -252,8 +260,7 @@ fn blob_action(
 }
 
 // Success collection:
-// - 114721507713529264750135620326395093237
-// - 303416926699858899782152564491612640343
+// - 27412239664388069923010120978984735311
 fn get_oldest(mut oldest: ResMut<OldestBlob>, query: Query<(&Blob, &Genes)>) {
     query.for_each(|(blob, genes)| {
         if blob.generation > oldest.0 .1 {

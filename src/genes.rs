@@ -3,6 +3,8 @@ use rand::Rng;
 
 const MUT_RATE: f64 = 0.001;
 
+// TODO: turn this into a vector or array to support more genes
+// also remember to turn i8 weights into i16s
 type Gene = u128;
 
 #[derive(Clone, Component)]
@@ -21,31 +23,15 @@ impl Genes {
     pub fn replicate(&self) -> Genes {
         let mut r = rand::thread_rng();
         let mut gene = self.gene.clone();
-        // TODO: hmmm closure maybe lol
-        if r.gen_bool(MUT_RATE) {
-            gene ^= 1u128 << r.gen_range(0..16);
+        let mut mutate = |start: i32, end: i32| {
+            if r.gen_bool(MUT_RATE) {
+                gene ^= 1u128 << r.gen_range(start..end);
+            }
+        };
+        for i in 0..8 {
+            mutate(i * 16, (i + 1) * 16);
         }
-        if r.gen_bool(MUT_RATE) {
-            gene ^= 1u128 << r.gen_range(16..32);
-        }
-        if r.gen_bool(MUT_RATE) {
-            gene ^= 1u128 << r.gen_range(32..48);
-        }
-        if r.gen_bool(MUT_RATE) {
-            gene ^= 1u128 << r.gen_range(48..64);
-        }
-        if r.gen_bool(MUT_RATE) {
-            gene ^= 1u128 << r.gen_range(64..80);
-        }
-        if r.gen_bool(MUT_RATE) {
-            gene ^= 1u128 << r.gen_range(80..96);
-        }
-        if r.gen_bool(MUT_RATE) {
-            gene ^= 1u128 << r.gen_range(96..112);
-        }
-        if r.gen_bool(MUT_RATE) {
-            gene ^= 1u128 << r.gen_range(112..128);
-        }
+
         Genes { gene }
     }
 }

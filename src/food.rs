@@ -30,7 +30,7 @@ impl Default for Food {
 struct MinFood(u32);
 impl Default for MinFood {
     fn default() -> Self {
-        Self(128)
+        Self(64)
     }
 }
 struct CurFood(u32);
@@ -73,7 +73,7 @@ fn spawn_food(
     win: Res<WinSize>,
 ) {
     let mut r = rand::thread_rng();
-    let mut ctr = 0u8; // only bring eight back in one go
+    let mut ctr = 0u8; // only spawn eight in one go
     while cur_food.0 < min_food.0 && ctr < 8 {
         commands
             .spawn_bundle(SpriteBundle {
@@ -138,14 +138,12 @@ fn dissolve_chems(mut commands: Commands, mut query: Query<(Entity, &mut Chem)>)
     });
 }
 
-// TODO error if two blobs eat same food at once, and ent is sent across two separate cycles
 fn remove_food(
     mut commands: Commands,
     mut cur_food: ResMut<CurFood>,
     mut eaten_food: ResMut<EatenFood>,
 ) {
     for food in eaten_food.0.iter() {
-        // println!("{:?}", food);
         commands.entity(*food).despawn();
         cur_food.0 -= 1;
     }

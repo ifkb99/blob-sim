@@ -116,6 +116,8 @@ impl Network {
             }
         }
 
+        // TODO: remove synaps that do not eventually connect to an output
+
         let s_bundle = SynBundle {
             direct_synaps,
             to_int_synaps,
@@ -212,6 +214,7 @@ impl Network {
 
         // TODO: consider random vs breakpoint
         // why am I doing this extra stuff?
+        // TODO: don't do these extra calculations inside the network, move to blob
         (
             2. * self.outputs[0].weight - 1.,
             2. * self.outputs[1].weight - 1.,
@@ -219,12 +222,6 @@ impl Network {
             2. * self.outputs[3].weight - 1. > 0.7,
         )
     }
-
-    // fn set_inputs(&mut self, inputs: Vec<f32>) {
-    //     for i in 0..self.inputs.len() {
-    //         self.inputs[i].weight = inputs[i];
-    //     }
-    // }
 }
 
 #[cfg(test)]
