@@ -2,13 +2,14 @@ use bevy::{
     core::FixedTimestep,
     math::{Vec2, Vec3},
     prelude::{
-        App, Color, Commands, Component, Entity, Plugin, Query, Res, ResMut, SystemSet, Transform,
-        With,
+        info_span, App, Color, Commands, Component, Entity, Plugin, Query, Res, ResMut, SystemSet,
+        Transform, With,
     },
     sprite::{Sprite, SpriteBundle},
     tasks::ComputeTaskPool,
 };
 use rand::Rng;
+use std::cmp::Ordering::Equal;
 
 use crate::{
     food::{EatenFood, Food},
@@ -43,7 +44,7 @@ impl Default for CurBlobs {
 struct MinBlobs(u32);
 impl Default for MinBlobs {
     fn default() -> Self {
-        Self(32)
+        Self(64)
     }
 }
 
@@ -176,6 +177,119 @@ fn blob_replicate(
     });
 }
 
+// MOVE THIS TO OWN FILE??
+// TODO: underflow error somewhere
+fn bin_search(
+    l: usize,
+    r: usize,
+    c: &[Vec3],
+    blob_x: f32,
+    limit: f32,
+    accept: fn(cur: usize, c: &[Vec3], blob_x: f32, limit: f32) -> i8,
+) -> (usize, bool) {
+    if r >= l {
+        let mid = l + (r - l) / 2;
+
+        let dir = accept(mid, c, blob_x, limit);
+        if dir == 0 {
+            if mid == 0 || mid == c.len() - 1 {
+                return (mid, true);
+            }
+            //|| mid == 0 || mid == c.len() - 1 {
+            // TODO: returns 0,0 a LOT
+            // found bound
+            return (mid, true);
+        }
+        if dir == 1 {
+            if mid == c.len() - 1 {
+                return (mid, false);
+            }
+            // TODO: this fix can be better
+            //if mid == c.len() - 1 {
+            //return (mid, true);
+            //}
+            // bound is right
+            return bin_search(r, mid + 1, c, blob_x, limit, accept);
+        }
+        if mid == 0 {
+            return (mid, false);
+        }
+        // bound is left
+        // TODO: underflow if mid is 0. this fix can probably be better
+        //if mid == 0 {
+        //return (0, true);
+        //}
+        return bin_search(l, mid - 1, c, blob_x, limit, accept);
+    }
+    (0, false)
+}
+
+fn find_window(blob_x: f32, limit: f32, c: &[Vec3]) -> (usize, usize, bool) {
+    let c_len = c.len();
+    if c_len < 2 {
+        // if there is only one chem on screen I literally don't care
+        return (0, 0, false);
+    }
+
+    // if (c[0].x - blob_x).abs() < limit {
+
+    // }
+
+    let (l, exists) = bin_search(
+        0,
+        c_len - 1,
+        c,
+        blob_x,
+        limit,
+        // I think the issue is here
+        |cur: usize, c: &[Vec3], blob_x: f32, limit: f32| -> i8 {
+            // want to find spot where cur is within limit, and just left of cur is over limit (or cur is 0)
+            if (blob_x - c[cur].x).abs() <= limit
+                && (cur == 0 || (blob_x - c[cur - 1].x).abs() > limit)
+            {
+                0
+            // } else if cur > 0 && blob_x < c[cur - 1].x {
+            } else if cur > 0 && blob_x < c[cur].x {
+                // go left
+                -1
+            } else {
+                1
+            }
+        },
+    );
+    if !exists {
+        return (0, 0, false);
+    }
+
+    let (r, exists) = bin_search(
+        l,
+        c_len - 1,
+        c,
+        blob_x,
+        limit,
+        // I think the issue is here
+        |cur: usize, c: &[Vec3], blob_x: f32, limit: f32| -> i8 {
+            // want to find spot where cur is within limit, and just right of cur is over limit (or cur is len of arr-1)
+            if (blob_x - c[cur].x).abs() < limit
+                && (cur == c.len() - 1 || (blob_x - c[cur + 1].x).abs() > limit)
+            {
+                0
+            // } else if cur < c.len() - 2 && blob_x > c[cur + 1].x {
+            } else if cur < c.len() - 1 && blob_x > c[cur].x {
+                // go right
+                1
+            } else {
+                -1
+            }
+        },
+    );
+    if !exists {
+        return (0, 0, false);
+    }
+
+    (l, r, true)
+}
+
 // Input nodes: sensor(s), oscillator, energy
 // n mid nodes
 // Output nodes: x_mov, y_mov, consume, reproduce
@@ -189,19 +303,45 @@ fn blob_action(
     mut eaten_food: ResMut<EatenFood>,
     pool: Res<ComputeTaskPool>,
 ) {
-    let c: Vec<(&Transform, _)> = chem_query.iter().collect();
+    // sweep and prune for faster distance check
+    let sort_span = info_span!("sorting_chems", name = "sorting_chems").entered();
+    let mut c: Vec<Vec3> = chem_query
+        .iter()
+        .map(|(trans, _)| trans.translation)
+        .collect();
+    c.sort_unstable_by(|t1, t2| t1.x.partial_cmp(&t2.x).unwrap_or(Equal));
+    sort_span.exit();
+
     blob_query.par_for_each_mut(&pool, 16, |(mut accel, blob_trans, mut blob)| {
         // update sensors, x and y dir for nearby chems
+        // I'm lazy so I will simply perform a binary search to create a window of chems that need to be considered
+        // perhaps I can turn this (chem list) into some sort of tree later
         let blob_loc = blob_trans.translation;
-        c.iter().for_each(|(trans, _)| {
-            let loc = trans.translation;
-            let dist = blob_loc.distance_squared(loc);
-
-            if dist < 100. {
-                blob.brain.inputs[0].cur_sum += blob_loc.x - loc.x;
-                blob.brain.inputs[1].cur_sum += blob_loc.y - loc.y;
+        let window_span = info_span!("find_window", name = "find_window").entered();
+        let (l, r, window_exists) = find_window(blob_loc.x, 100., &c);
+        if window_exists {
+            println!("l: {} r: {}, c_len: {}", l, r, c.len() - 1);
+            for chem_idx in l..r {
+                let dist = blob_loc.distance_squared(c[chem_idx]);
+                if dist < 100. {
+                    blob.brain.inputs[0].cur_sum += blob_loc.x - c[chem_idx].x;
+                    blob.brain.inputs[1].cur_sum += blob_loc.y - c[chem_idx].y;
+                }
             }
-        });
+        }
+        window_span.exit();
+
+        // let naive_span = info_span!("n2rd", name = "n2rd").entered();
+        // c.iter().for_each(|trans| {
+        //     let loc = trans;
+        //     let dist = blob_loc.distance_squared(*loc);
+
+        //     if dist < 100. {
+        //         blob.brain.inputs[0].cur_sum += blob_loc.x - loc.x;
+        //         blob.brain.inputs[1].cur_sum += blob_loc.y - loc.y;
+        //     }
+        // });
+        // naive_span.exit();
         blob.brain.inputs[0].activate();
         blob.brain.inputs[1].activate();
         blob.brain.inputs[0].cur_sum = 0.;

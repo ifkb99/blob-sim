@@ -72,6 +72,7 @@ impl Default for Acceleration {
 pub enum Stages {
     FoodStage,
     BlobStage,
+    MoveStage,
 }
 
 fn main() {
@@ -92,7 +93,13 @@ fn main() {
         .add_plugin(FoodPlugin)
         .add_plugin(BlobPlugin)
         .add_startup_system(setup)
-        .add_system(brownian_drift)
+        // .add_system_before(brownian_drift)
+        .add_stage_before(
+            Stages::BlobStage,
+            Stages::MoveStage,
+            SystemStage::parallel(),
+        )
+        .add_system_to_stage(Stages::MoveStage, brownian_drift)
         .run();
 }
 
