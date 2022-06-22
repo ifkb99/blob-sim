@@ -9,7 +9,7 @@ use bevy::{
 };
 use rand::Rng;
 
-use crate::{Acceleration, Chem, Stages, Velocity, WinSize};
+use crate::{Acceleration, Chem, Stages, Velocity, WinSize, FD_TO_BLOB, N_BLOBS};
 
 #[derive(Component)]
 pub struct Food {
@@ -30,7 +30,7 @@ impl Default for Food {
 struct MinFood(u32);
 impl Default for MinFood {
     fn default() -> Self {
-        Self(64)
+        Self((FD_TO_BLOB * (N_BLOBS as f32)) as u32)
     }
 }
 struct CurFood(u32);

@@ -26,6 +26,9 @@ const HEIGHT: f32 = 720.;
 // const WIDTH: f32 = 640.;
 const WIDTH: f32 = 1280.;
 
+const N_BLOBS: u32 = 32;
+const FD_TO_BLOB: f32 = 1.5;
+
 struct Speed(f32);
 impl Default for Speed {
     fn default() -> Self {

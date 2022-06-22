@@ -17,7 +17,7 @@ use crate::{
     network::Network,
     Chem, Stages, WinSize,
 };
-use crate::{Acceleration, Velocity};
+use crate::{Acceleration, Velocity, N_BLOBS};
 
 #[derive(Component)]
 struct Blob {
@@ -44,7 +44,7 @@ impl Default for CurBlobs {
 struct MinBlobs(u32);
 impl Default for MinBlobs {
     fn default() -> Self {
-        Self(64)
+        Self(N_BLOBS)
     }
 }
 
@@ -178,7 +178,7 @@ fn blob_replicate(
 }
 
 // MOVE THIS TO OWN FILE??
-// TODO: underflow error somewhere
+// TODO: make a test for this
 fn bin_search(
     l: usize,
     r: usize,
@@ -192,11 +192,6 @@ fn bin_search(
 
         let dir = accept(mid, c, blob_x, limit);
         if dir == 0 {
-            if mid == 0 || mid == c.len() - 1 {
-                return (mid, true);
-            }
-            //|| mid == 0 || mid == c.len() - 1 {
-            // TODO: returns 0,0 a LOT
             // found bound
             return (mid, true);
         }
@@ -204,21 +199,13 @@ fn bin_search(
             if mid == c.len() - 1 {
                 return (mid, false);
             }
-            // TODO: this fix can be better
-            //if mid == c.len() - 1 {
-            //return (mid, true);
-            //}
             // bound is right
-            return bin_search(r, mid + 1, c, blob_x, limit, accept);
+            return bin_search( mid + 1, r, c, blob_x, limit, accept);
         }
         if mid == 0 {
             return (mid, false);
         }
         // bound is left
-        // TODO: underflow if mid is 0. this fix can probably be better
-        //if mid == 0 {
-        //return (0, true);
-        //}
         return bin_search(l, mid - 1, c, blob_x, limit, accept);
     }
     (0, false)
@@ -226,16 +213,14 @@ fn bin_search(
 
 fn find_window(blob_x: f32, limit: f32, c: &[Vec3]) -> (usize, usize, bool) {
     let c_len = c.len();
+    // I use dist_squared when looking at pos
+    let limit = limit * limit;
     if c_len < 2 {
         // if there is only one chem on screen I literally don't care
         return (0, 0, false);
     }
 
-    // if (c[0].x - blob_x).abs() < limit {
-
-    // }
-
-    let (l, exists) = bin_search(
+    let (r, exists) = bin_search(
         0,
         c_len - 1,
         c,
@@ -243,17 +228,18 @@ fn find_window(blob_x: f32, limit: f32, c: &[Vec3]) -> (usize, usize, bool) {
         limit,
         // I think the issue is here
         |cur: usize, c: &[Vec3], blob_x: f32, limit: f32| -> i8 {
-            // want to find spot where cur is within limit, and just left of cur is over limit (or cur is 0)
-            if (blob_x - c[cur].x).abs() <= limit
-                && (cur == 0 || (blob_x - c[cur - 1].x).abs() > limit)
-            {
-                0
-            // } else if cur > 0 && blob_x < c[cur - 1].x {
-            } else if cur > 0 && blob_x < c[cur].x {
-                // go left
-                -1
-            } else {
+            // want to find spot where cur is within limit, and just right of cur is over limit (or cur is len of arr-1)
+            if (blob_x - c[cur].x).abs() <= limit {
+                if cur == c.len() - 1 || (blob_x - c[cur + 1].x).abs() > limit {
+                    0
+                } else {
+                // go right
+                    1
+                }
+            } else if blob_x > c[cur].x {
                 1
+            } else {
+                -1
             }
         },
     );
@@ -261,31 +247,38 @@ fn find_window(blob_x: f32, limit: f32, c: &[Vec3]) -> (usize, usize, bool) {
         return (0, 0, false);
     }
 
-    let (r, exists) = bin_search(
-        l,
-        c_len - 1,
+    let (l, _) = bin_search(
+        0,
+        r,
         c,
         blob_x,
         limit,
         // I think the issue is here
         |cur: usize, c: &[Vec3], blob_x: f32, limit: f32| -> i8 {
-            // want to find spot where cur is within limit, and just right of cur is over limit (or cur is len of arr-1)
-            if (blob_x - c[cur].x).abs() < limit
-                && (cur == c.len() - 1 || (blob_x - c[cur + 1].x).abs() > limit)
-            {
-                0
-            // } else if cur < c.len() - 2 && blob_x > c[cur + 1].x {
-            } else if cur < c.len() - 1 && blob_x > c[cur].x {
-                // go right
+            // want to find spot where cur is within limit, and just left of cur is over limit (or cur is 0)
+            if (blob_x - c[cur].x).abs() <= limit {
+                // within limit
+                if cur == 0 || (blob_x - c[cur - 1].x).abs() > limit {
+                    // found bound
+                    0
+                } else {
+                    // go left
+                    -1
+                }
+            // outside limit
+            } else if blob_x > c[cur].x {
                 1
             } else {
                 -1
             }
         },
     );
-    if !exists {
-        return (0, 0, false);
-    }
+    
+
+    // if left exists, right does too
+    // if !exists {
+    //     return (0, 0, false);
+    // }
 
     (l, r, true)
 }
@@ -320,7 +313,7 @@ fn blob_action(
         let window_span = info_span!("find_window", name = "find_window").entered();
         let (l, r, window_exists) = find_window(blob_loc.x, 100., &c);
         if window_exists {
-            println!("l: {} r: {}, c_len: {}", l, r, c.len() - 1);
+            // println!("l: {} r: {}, c_len: {}", l, r, c.len() - 1);
             for chem_idx in l..r {
                 let dist = blob_loc.distance_squared(c[chem_idx]);
                 if dist < 100. {
@@ -411,4 +404,24 @@ fn get_oldest(mut oldest: ResMut<OldestBlob>, query: Query<(&Blob, &Genes)>) {
             oldest.0 = (genes.gene, blob.generation);
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use bevy::math::Vec3;
+    use crate::blob::find_window;
+
+    #[test]
+    fn find_window_test() {
+        let blob_x = 2.0;
+        let chems = vec!(
+            Vec3::new(0., 1., 1.), Vec3::new(1., 1., 1.),
+            Vec3::new(2., 1., 1.),
+            Vec3::new(3., 3., 3.), Vec3::new(4., 4., 4.)
+        );
+        let (l, r, _) = find_window(blob_x, 1., &chems);
+        
+        assert_eq!(l, 1);
+        assert_eq!(r, 3);
+    }
 }
